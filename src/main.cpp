@@ -3,10 +3,11 @@
 #include <VescUart.h>
 #include <BuckPSU.h> // to install: put the github link in deps and extracted file in lib
 #include <ezButton.h>
+#include <PID_v1.h>
+
 // #include <SoftwareWire.h>
 // #include <hd44780.h>
 // #include <hd44780ioClass/hd44780_I2Cexp.h>  // For I2C (PCF8574)
-
 
 // init the switches -------> limit switches put them wherever there is space and add pin #s
 ezButton driveSwitch(49);
@@ -18,43 +19,37 @@ String mode = "none";
 #define readPIN A0       // pot pin
 #define SignalBattery 26 // signal from buck to activate battery relay
 #define SignalSolar 28   // signal from buck to activate solar relay
-
-#define relayBattery 24 // output pin to control battery relay
-#define relaySolar 25   // output pin to control solar relay
+#define relayBattery 24  // output pin to control battery relay
+#define relaySolar 25    // output pin to control solar relay
 
 VescUart UART;
 BuckPSU psu(Serial2);
 
 // SoftwareWire softI2C(3, 2); //sda scl
+// hd44780_I2Cexp lcd2(0x27, &softI2C);
 
 LiquidCrystal_I2C lcd(0x27, 20, 4);
-// hd44780_I2Cexp lcd2(0x27, &softI2C);
+
+double rpmInput = 0, rpmOutput = 0, rpmSetpoint = 0;
+double Kp = .0004, Ki = 0.0001, Kd = 0.0001; // TUNEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+PID myPID(&rpmInput, &rpmOutput, &rpmSetpoint, Kp, Ki, Kd, DIRECT);
 
 void setup()
 {
-
   lcd.init();
   lcd.backlight();
 
   Serial.begin(9600);
-
   /** Setup UART port (Serial1 on Atmega32u4) */
   Serial1.begin(115200);
   Serial2.begin(4800);
 
   while (!Serial)
   {
-    ;
   }
 
   /** Define which ports to use as UART */
   UART.setSerialPort(&Serial1);
-
-
-  // if switches arent working, uncomment next 3 lines: ----> (Switch troubleshooting)
-  // pinMode(driveSwitch, INPUT_PULLUP);
-  // pinMode(neutralSwitch, INPUT_PULLUP);
-  // pinMode(reverseSwitch, INPUT_PULLUP);
 
   pinMode(readPIN, INPUT);
 
@@ -75,42 +70,45 @@ void setup()
   lcd.clear();
 
   delay(1000);
+
+  myPID.SetMode(AUTOMATIC);
+  myPID.SetOutputLimits(0, 8000); // Set output limits to 0-8000 RPM
 }
 
-void rpmset(float start, float end)
-{
-  const float step = 0.005;
-  const float tolerance = 0.03;
+// void rpmset(float start, float end)
+// {
+//   const float step = 0.005;
+//   const float tolerance = 0.03;
 
-  start = abs(start);
-  while (abs(start - end) > tolerance)
-  {
-    if (end > start)
-    {
-      start += step;
-      if (start > end)
-        start = end;
-    }
-    else if (end < start)
-    {
-      start -= step;
-      if (start < end)
-        start = end;
-    }
+//   start = abs(start);
+//   while (abs(start - end) > tolerance)
+//   {
+//     if (end > start)
+//     {
+//       start += step;
+//       if (start > end)
+//         start = end;
+//     }
+//     else if (end < start)
+//     {
+//       start -= step;
+//       if (start < end)
+//         start = end;
+//     }
 
-    if (mode == "DRIVE")
-      UART.setDuty(start);
-    else if (mode == "REVERSE")
-      UART.setDuty(-start);
-    else if (mode == "NEUTRAL")
-      UART.setDuty(-start);
-    else
-    {}
-      // Serial.println("rpmset() func not working b/c no mode");
+//     if (mode == "DRIVE")
+//       UART.setRPM(start);
+//     else if (mode == "REVERSE")
+//       UART.setRPM(-start);
+//     else if (mode == "NEUTRAL")
+//       UART.setRPM(start);
+//     else
+//     {}
+//       // Serial.println("rpmset() func not working b/c no mode");
 
-    // delay(10);
-  }
-}
+//     // delay(10);
+//   }
+// }
 
 void buckset(float start, float end)
 {
@@ -138,19 +136,17 @@ void buckset(float start, float end)
   }
 }
 
-
 void loop()
 { // --------------------------------- LOOP ---------------------------------
 
   // int batonoff = digitalRead(SignalBattery);
-  int batonoff = 0;
+  int batonoff = 0; // hardcode this for testing
   int solonoff = digitalRead(SignalSolar);
 
   if (batonoff == 0)
   {
     digitalWrite(relayBattery, HIGH);
-    // Serial.println("   BATTERY ON");
-
+    // Serial.println("BATTERY ON");
   }
   else
   {
@@ -161,7 +157,6 @@ void loop()
   {
     digitalWrite(relaySolar, HIGH);
     // Serial.println("SOLAR ON");
-    
     buckset(0, 28000);
     psu.enableOutput(true);
   }
@@ -169,8 +164,6 @@ void loop()
   {
     digitalWrite(relaySolar, LOW);
     // Serial.println("SOLAR OFF");
-
-    
     buckset(28000, 0);
     psu.enableOutput(false);
   }
@@ -189,70 +182,75 @@ void loop()
   Serial.print("Pot: ");
   Serial.print(pot);
   Serial.print(", ");
+  rpmSetpoint = pot;
 
   if (drist == 0)
-  {
     mode = "DRIVE";
-  }
   if (neust == 0)
-  {
     mode = "NEUTRAL";
-  }
   if (revst == 0)
-  {
     mode = "REVERSE";
-  }
+
   Serial.print("Current Mode: ");
   Serial.print(mode);
   Serial.print(", ");
 
-  float rpm = 0.0;
-  float volt = 0.0;
-  float amps = 0.0;
-  float power = 0.0;
-  float duty = 0.0;
+  float rpm = 0, volt = 0, amps = 0, power = 0, duty = 0, voltage = 0;
 
   lcd.clear();
-  // lcd.print("Hi");
 
   // call this function if u wanna get data
   if (UART.getVescValues())
   {
-
     rpm = UART.data.rpm;
     volt = UART.data.inpVoltage;
     amps = UART.data.avgInputCurrent;
     power = UART.data.inpVoltage * UART.data.avgInputCurrent;
     duty = UART.data.dutyCycleNow;
+    voltage = UART.data.inpVoltage;
 
-    // Serial.print(" DUTY CURRENT: ");
-    // Serial.print(duty);
-    // Serial.print("data given  on lcd");
+    rpmInput = rpm;
+    myPID.Compute(); // gets rpmOutput value from PID
 
-    String voltage  = "R: " + String((int)rpm);
-    String current = " C: " + String(amps);
-    String pow = "P: " + String((int)power);
-    String dut = " D: " + String(duty);
+    String rpmStr = "R: " + String((int)rpm);
+    String currentStr = " C: " + String(amps);
+    String powStr = "P: " + String((int)power);
+    String dutStr = " D: " + String(duty);
+    String voltStr = " V: " + String((int)volt);
 
-    Serial.print(" ");
-    Serial.print(voltage);
-    Serial.print(" ");
-    Serial.print(current);
-    Serial.print("  ");
-    Serial.print(pow);
-    Serial.print(" ");
-    Serial.print(dut);
-    Serial.println("");
+    Serial.print("SP: ");
+    Serial.print(rpmSetpoint);
+    Serial.print(" RPM: ");
+    Serial.print(rpm);
+    Serial.print(" OUT: ");
+    Serial.println(rpmOutput);
+
+
+    Serial.print("RPM:");
+    Serial.print(rpm);
+    Serial.print(", DUTY:");
+    Serial.println(duty);
+
+
+    // Serial.print(" ");
+    // Serial.print(rpm);
+    // Serial.print(" ");
+    // Serial.print(current);
+    // Serial.print("  ");
+    // Serial.print(pow);
+    // Serial.print(" ");
+    // Serial.print(dut);
+    // Serial.println("");
 
     lcd.setCursor(0, 0);
-    lcd.print(voltage);
-    int col = sizeof(voltage) / sizeof(String);
+    lcd.print(rpmStr);
+    // int col = sizeof(rpm) / sizeof(String);
     lcd.setCursor(6, 0);
-    lcd.print(current);
+    lcd.print(currentStr);
     lcd.setCursor(0, 1);
-    lcd.print(pow);
+    lcd.print(powStr);
     lcd.setCursor(6, 1);
-    lcd.print(dut);
+    lcd.print(dutStr);
   }
   else
   {
@@ -262,26 +260,24 @@ void loop()
   if (mode == "DRIVE")
   {
     // dutyset(duty, pot);
-    rpmset(rpm, pot);
+    UART.setRPM(rpmOutput);
   }
   else if (mode == "REVERSE")
   {
     // dutyset(duty, pot);
-    rpmset(rpm, pot);
-
+    // rpmset(rpm, pot);
+    UART.setRPM(-rpmOutput);
   }
   else if (mode == "NEUTRAL")
   {
     // dutyset(duty, 0);
-    rpmset(rpm, 0);
-
+    UART.setRPM(0);
   }
   else
   {
     UART.setDuty(0);
     // Serial.println("idk what im doing i didnt get a mode");
   }
-
 
   delay(10);
 }
