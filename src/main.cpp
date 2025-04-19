@@ -1,11 +1,12 @@
 #include <Arduino.h>
 #include <LiquidCrystal_I2C.h>
 #include <VescUart.h>
-#include <BuckPSU.h>
+#include <BuckPSU.h> // to install: put the github link in deps and extracted file in lib
 #include <ezButton.h>
 // #include <SoftwareWire.h>
 // #include <hd44780.h>
 // #include <hd44780ioClass/hd44780_I2Cexp.h>  // For I2C (PCF8574)
+
 
 // init the switches -------> limit switches put them wherever there is space and add pin #s
 ezButton driveSwitch(49);
@@ -49,6 +50,7 @@ void setup()
   /** Define which ports to use as UART */
   UART.setSerialPort(&Serial1);
 
+
   // if switches arent working, uncomment next 3 lines: ----> (Switch troubleshooting)
   // pinMode(driveSwitch, INPUT_PULLUP);
   // pinMode(neutralSwitch, INPUT_PULLUP);
@@ -77,9 +79,10 @@ void setup()
 
 void dutyset(float start, float end)
 {
-  const float step = 0.04;
+  const float step = 0.005;
   const float tolerance = 0.03;
 
+  start = abs(start);
   while (abs(start - end) > tolerance)
   {
     if (end > start)
@@ -102,9 +105,10 @@ void dutyset(float start, float end)
     else if (mode == "NEUTRAL")
       UART.setDuty(-start);
     else
-      Serial.println("dutyset() func not working b/c no mode");
+    {}
+      // Serial.println("dutyset() func not working b/c no mode");
 
-    delay(10);
+    // delay(10);
   }
 }
 
@@ -134,35 +138,39 @@ void buckset(float start, float end)
   }
 }
 
+
 void loop()
 { // --------------------------------- LOOP ---------------------------------
 
-  int batonoff = digitalRead(SignalBattery);
+  // int batonoff = digitalRead(SignalBattery);
+  int batonoff = 0;
   int solonoff = digitalRead(SignalSolar);
 
   if (batonoff == 0)
   {
     digitalWrite(relayBattery, HIGH);
-    Serial.println("BATTERY ON");
+    // Serial.println("   BATTERY ON");
+
   }
   else
   {
     digitalWrite(relayBattery, LOW);
-    Serial.println("BATTERY OFF");
+    // Serial.println("BATTERY OFF");
   }
   if (solonoff == 0)
   {
     digitalWrite(relaySolar, HIGH);
-    Serial.println("SOLAR ON");
-
+    // Serial.println("SOLAR ON");
+    
     buckset(0, 28000);
     psu.enableOutput(true);
   }
   else
   {
     digitalWrite(relaySolar, LOW);
-    Serial.println("SOLAR OFF");
+    // Serial.println("SOLAR OFF");
 
+    
     buckset(28000, 0);
     psu.enableOutput(false);
   }
@@ -217,14 +225,24 @@ void loop()
     power = UART.data.inpVoltage * UART.data.avgInputCurrent;
     duty = UART.data.dutyCycleNow;
 
-    Serial.print("DUTY CURRENT: ");
-    Serial.println(duty);
-    Serial.println("data given  on lcd");
+    // Serial.print(" DUTY CURRENT: ");
+    // Serial.print(duty);
+    // Serial.print("data given  on lcd");
 
-    String voltage = "V: " + String((int)volt);
+    String voltage  = "R: " + String((int)rpm);
     String current = " C: " + String(amps);
     String pow = "P: " + String((int)power);
     String dut = " D: " + String(duty);
+
+    Serial.print(" ");
+    Serial.print(voltage);
+    Serial.print(" ");
+    Serial.print(current);
+    Serial.print("  ");
+    Serial.print(pow);
+    Serial.print(" ");
+    Serial.print(dut);
+    Serial.println("");
 
     lcd.setCursor(0, 0);
     lcd.print(voltage);
@@ -235,18 +253,6 @@ void loop()
     lcd.print(pow);
     lcd.setCursor(6, 1);
     lcd.print(dut);
-
-    // Serial.print("RPM: ");
-    // Serial.print(UART.data.rpm);
-    // Serial.print(", ");
-    // Serial.print("Voltage:  ");
-    // Serial.print(UART.data.inpVoltage);
-    // Serial.print(", ");
-    // Serial.print("Current:  ");
-    // Serial.print(UART.data.avgInputCurrent);
-    // Serial.print(", ");
-    // Serial.print("Power:    ");
-    // Serial.println(UART.data.inpVoltage * UART.data.avgInputCurrent);
   }
   else
   {
@@ -268,8 +274,9 @@ void loop()
   else
   {
     UART.setDuty(0);
-    Serial.println("idk what im doing i didnt get a mode");
+    // Serial.println("idk what im doing i didnt get a mode");
   }
 
-  delay(50);
+
+  delay(10);
 }
