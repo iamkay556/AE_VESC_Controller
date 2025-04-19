@@ -77,7 +77,7 @@ void setup()
   delay(1000);
 }
 
-void dutyset(float start, float end)
+void rpmset(float start, float end)
 {
   const float step = 0.005;
   const float tolerance = 0.03;
@@ -106,7 +106,7 @@ void dutyset(float start, float end)
       UART.setDuty(-start);
     else
     {}
-      // Serial.println("dutyset() func not working b/c no mode");
+      // Serial.println("rpmset() func not working b/c no mode");
 
     // delay(10);
   }
@@ -185,7 +185,7 @@ void loop()
 
   /** Read The Input from the petentiometer and map the values from 0 - 1*/
   float pot = analogRead(readPIN);
-  pot = (pot / 1023) * 1.0;
+  pot = (pot / 1023) * 8000.0;
   Serial.print("Pot: ");
   Serial.print(pot);
   Serial.print(", ");
@@ -261,15 +261,20 @@ void loop()
 
   if (mode == "DRIVE")
   {
-    dutyset(duty, pot);
+    // dutyset(duty, pot);
+    rpmset(rpm, pot);
   }
   else if (mode == "REVERSE")
   {
-    dutyset(duty, pot);
+    // dutyset(duty, pot);
+    rpmset(rpm, pot);
+
   }
   else if (mode == "NEUTRAL")
   {
-    dutyset(duty, 0);
+    // dutyset(duty, 0);
+    rpmset(rpm, 0);
+
   }
   else
   {
